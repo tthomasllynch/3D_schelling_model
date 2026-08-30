@@ -68,7 +68,15 @@ def similarity_counts(grid, similarity_threshold):
             & (np.abs(grid - neighbour) < similarity_threshold)
         )
 
-    return similar_count, occupied_count
+        similarity_fraction_grid = np.divide(
+        # we do not count unoccupied cells in the similarity count 
+        similar_count,
+        occupied_count,
+        out=np.zeros(grid.shape, dtype=float),
+        where=occupied_count > 0,
+        )
+
+    return similar_count, occupied_count, similarity_fraction_grid
 
 
 def segregation_update(grid, similarity_threshold, segregation_threshold, rng):
@@ -79,14 +87,9 @@ def segregation_update(grid, similarity_threshold, segregation_threshold, rng):
     in the agent similarity calculation
     """
     occupied = grid != EMPTY
-    similar_count, occupied_count = similarity_counts(grid, similarity_threshold)
-    similarity = np.divide(
-        similar_count,
-        occupied_count,
-        out=np.zeros(grid.shape, dtype=float),
-        where=occupied_count > 0,
-    )
-    dissatisfied = np.argwhere(occupied & (similarity < segregation_threshold))
+    _, _, similarity_fraction_grid = similarity_counts(grid, similarity_threshold)
+    
+    dissatisfied = np.argwhere(occupied & (similarity_fraction_grid < segregation_threshold))
     empty_locations = np.argwhere(~occupied)
 
     number_moving = min(len(dissatisfied), len(empty_locations))
@@ -131,53 +134,4 @@ def plot_grid(ax, grid, title):
     )
     ax.set_box_aspect((grid.shape[2], grid.shape[1], grid.shape[0]))
     return plot
-
-
-def main():
-    grid_shape = (6, 6, 6)
-    fraction_empty = 0.2
-    number_steps = 100
-    similarity_threshold = 0.4
-    segregation_threshold = 0.5
-    consensus_threshold = 0.8
-    consensus_weight = 0.01
-
-    rng = np.random.default_rng(1)
-    grid = make_random_grid(grid_shape, fraction_empty, rng)
-    initial_grid = grid.copy()
-
-    for _ in range(number_steps):
-        grid = consensus_update(grid, consensus_threshold, consensus_weight)
-        grid = segregation_update(
-            grid, similarity_threshold, segregation_threshold, rng
-        )
-
-    occupied = grid != EMPTY
-    similar_count, occupied_count = similarity_counts(grid, similarity_threshold)
-    similarity = np.divide(
-        # we do not count unoccupied cells in the similarity count 
-        similar_count,
-        occupied_count,
-        out=np.zeros(grid.shape, dtype=float),
-        where=occupied_count > 0,
-    )
-
-    if occupied.any():
-        mean_similarity = similarity[occupied].mean()
-    else:
-        mean_similarity = 1.0
-
-    print(f"Mean similarity after {number_steps} steps: {mean_similarity:.4f}")
-
-    figure = plt.figure(figsize=(12, 6))
-    initial_axis = figure.add_subplot(121, projection="3d")
-    final_axis = figure.add_subplot(122, projection="3d")
-    plot_grid(initial_axis, initial_grid, "Initial grid")
-    plot_grid(final_axis, grid, "Grid after simulation")
-
-    plt.show()
-
-
-if __name__ == "__main__":
-    main()
 
