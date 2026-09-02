@@ -68,15 +68,36 @@ def similarity_counts(grid, similarity_threshold):
             & (np.abs(grid - neighbour) < similarity_threshold)
         )
 
-        similarity_fraction_grid = np.divide(
-        # we do not count unoccupied cells in the similarity count 
-        similar_count,
-        occupied_count,
-        out=np.zeros(grid.shape, dtype=float),
-        where=occupied_count > 0,
-        )
+    similarity_fraction_grid = np.divide(
+    # we do not count unoccupied cells in the similarity count
+    # cells with no neighbors have similarity fraction of 0 
+    similar_count,
+    occupied_count,
+    out=np.zeros(grid.shape, dtype=float),
+    where=occupied_count > 0,
+    )
 
     return similar_count, occupied_count, similarity_fraction_grid
+
+def mean_similarities(grid, similarity_threshold):
+    "Calculate mean individual and global similarities"
+    occupied = grid != EMPTY
+    similar_count, occupied_count, similarity_fraction_grid = similarity_counts(grid, similarity_threshold)
+    total_occupied_neighbours = occupied_count[occupied].sum()
+
+    if occupied.any():
+        mean_individual_similarity = similarity_fraction_grid[occupied].mean()
+    else:
+        mean_individual_similarity = 1.0
+
+    if total_occupied_neighbours > 0:
+        global_similarity = (
+            similar_count[occupied].sum()
+            /total_occupied_neighbours
+        )
+    else:
+        global_similarity = 1.0    
+    return mean_individual_similarity, global_similarity
 
 
 def segregation_update(grid, similarity_threshold, segregation_threshold, rng):
@@ -108,14 +129,13 @@ def segregation_update(grid, similarity_threshold, segregation_threshold, rng):
     updated[destination] = moving_opinions
     return updated
 
-
 def plot_grid(ax, grid, title):
     """Plot each occupied cell using coolwarm colour map for opinions."""
     occupied = grid != EMPTY
     coordinates = np.argwhere(occupied)
     opinions = grid[occupied]
 
-    plot = ax.scatter(
+    ax.scatter(
         coordinates[:, 2],
         coordinates[:, 1],
         coordinates[:, 0],
@@ -124,14 +144,48 @@ def plot_grid(ax, grid, title):
         vmin=0,
         vmax=1,
         s=100,
-        alpha=0.5,
+        alpha=0.8,
+        linewidth = 0,
     )
     ax.set(
         title=title,
         xlabel="Width",
         ylabel="Height",
         zlabel="Depth",
+        xlim=(0, grid.shape[2] - 1),
+        ylim=(0, grid.shape[1] - 1),
+        zlim=(0, grid.shape[0] - 1),
     )
     ax.set_box_aspect((grid.shape[2], grid.shape[1], grid.shape[0]))
-    return plot
 
+def plot_graphs(graph_ax_individual, graph_ax_global, 
+                title_individual, title_global):
+    """Plot graphs of the mean individual and global similarities against timestep."""
+
+    graph_ax_individual.set(
+    title=title_individual,
+    xlabel="Step",
+    ylabel="Similarity",
+    ylim=(0, 1),
+    )
+
+    graph_ax_global.set(
+    title=title_global,
+    xlabel="Step",
+    ylabel="Similarity",
+    ylim=(0,1),
+    )
+
+    graph_ax_individual.grid(
+        True, 
+        linestyle="--", 
+        linewidth=0.6, 
+        alpha=0.5,
+    )
+
+    graph_ax_global.grid(
+        True, 
+        linestyle="--", 
+        linewidth=0.6, 
+        alpha=0.5,
+    )
