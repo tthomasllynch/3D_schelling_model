@@ -6,20 +6,21 @@ from schelling_3d import (
     make_random_grid,
     consensus_update,
     segregation_update,
-    plot_grid,
+    plot_schelling,
     mean_similarities,
-    plot_graphs
+    find_dissatisfied_agents,
+    plot_graph
 )
 
 GRID_SHAPE = (20, 20, 20)
 FRACTION_EMPTY = 0.9
-NUM_STEPS = 2000
+NUM_STEPS = 400
 STEPS_PER_PLOT = 1
-DELAY_PER_PLOT = 0.003
+DELAY_PER_PLOT = 0.000000001
 
 SIMILARITY_THRESHOLD = 0.2
-SEGREGATION_THRESHOLD = 0.8
-CONSENSUS_THRESHOLD = 0.15
+SEGREGATION_THRESHOLD = 20/26
+CONSENSUS_THRESHOLD = 0.17
 CONSENSUS_WEIGHT = 0.06
 FLOODFILL_THRESHOLD = 0.2
 SEED = 2
@@ -53,13 +54,15 @@ def main():
 
         #initialising and positioning figures
         figure = plt.figure(figsize=(20, 10))
-        initial_axis = figure.add_subplot(221, projection="3d")
-        final_axis = figure.add_subplot(222, projection="3d")
+        initial_axis = figure.add_subplot(321, projection="3d")
+        final_axis = figure.add_subplot(322, projection="3d")
 
-        graph_ax_individual = figure.add_subplot(223)
-        graph_ax_global = figure.add_subplot(224)
+        graph_ax_individual = figure.add_subplot(323)
+        graph_ax_global = figure.add_subplot(324)
+        graph_ax_dissatisfied = figure.add_subplot(325)
+        graph_ax_sd = figure.add_subplot(326)
 
-        plot_grid(initial_axis, initial_grid, "Initial grid")
+        plot_schelling(initial_axis, initial_grid, "Initial grid")
 
         figure.colorbar(
             plt.cm.ScalarMappable(
@@ -72,27 +75,23 @@ def main():
             pad=0.1,
         )
 
-        #Two scatter objects updated every iteration
-        individual_points = graph_ax_individual.scatter(
-        [],
-        [],
-        color="#287271",
-        s=20,
-        )
-
-        global_points = graph_ax_global.scatter(
-        [],
-        [],
-        color="#D1495B",
-        s=20,
-        )
-
+        #scatter objects updated every iteration
         steps = []
-        individual_values = []
-        global_values = []
+        individual_mean_values = []
+        global_mean_values = []
+        dissatisfied_sum_values = []
+        sd_values = []
+
+        individual_points = plot_graph(graph_ax_individual, "Mean Individual Similarity", "Similarity", (0, 1))
+        global_points = plot_graph(graph_ax_global, "Mean Global Similarity", "Similarity", (0, 1))
+        dissatisfied_points = plot_graph(graph_ax_dissatisfied, "Number of Dissatisfied Agents",
+                                         "Dissatisfied Agents", (0, np.count_nonzero(grid)))
+        sd_points = plot_graph(graph_ax_sd, "Standard Deviation", "Standard Deviation", (0, 1))
 
         graph_ax_individual.set_xlim(0, args.number_steps)
         graph_ax_global.set_xlim(0, args.number_steps)
+        graph_ax_dissatisfied.set_xlim(0, args.number_steps)
+        graph_ax_sd.set_xlim(0, args.number_steps)
         
         plt.ion()
         for step in range(args.number_steps):
@@ -104,40 +103,54 @@ def main():
                 )
 
             if args.segregation:
-                grid = segregation_update(
+                grid, dissatisfied_count = segregation_update(
                     grid,
                     args.similarity_threshold,
                     args.segregation_threshold,
                     rng,
                 )
+            else:
+                dissatisfied, _ = find_dissatisfied_agents(
+                    grid,
+                    args.similarity_threshold,
+                    args.segregation_threshold,
+                )
+                dissatisfied_count = len(dissatisfied)
 
             mean_individual_sim, mean_global_sim = (
                 mean_similarities(grid, args.similarity_threshold)
                 )
+            occupied = grid != EMPTY
+            standard_deviation = np.std(grid[occupied])
 
             steps.append(step + 1)
-            individual_values.append(mean_individual_sim)
-            global_values.append(mean_global_sim)
+            individual_mean_values.append(mean_individual_sim)
+            global_mean_values.append(mean_global_sim)
+            dissatisfied_sum_values.append(dissatisfied_count)
+            sd_values.append(standard_deviation)
 
             print(f"Step {step + 1}/{args.number_steps}:\n"
-                f"mean individual similarity = {mean_individual_sim:.4f}\n"
-                f"mean global similarity = {mean_global_sim:.4f}\n")
+            f"mean individual similarity = {mean_individual_sim:.4f}\n"
+            f"mean global similarity = {mean_global_sim:.4f}\n"
+            f"number of dissatisfied agents = {dissatisfied_count}\n")
             
             if ((step + 1) % args.steps_per_plot) == 0:
 
                 individual_points.set_offsets(
-                np.column_stack((steps, individual_values))
+                np.column_stack((steps, individual_mean_values))
                 )
                 global_points.set_offsets(
-                np.column_stack((steps, global_values))
+                np.column_stack((steps, global_mean_values))
                 )
-
+                dissatisfied_points.set_offsets(
+                np.column_stack((steps, dissatisfied_sum_values))
+                )
+                sd_points.set_offsets(
+                np.column_stack((steps, sd_values))
+                )
                 final_axis.clear()
-                plot_grid(final_axis, grid, f"Grid after step {step + 1}")
-                plot_graphs(graph_ax_individual, graph_ax_global, 
-                            f"Mean individual similarity after step {step + 1}",
-                            f"Mean global similarity after step {step + 1}")
-                
+                plot_schelling(final_axis, grid, f"Grid after step {step + 1}")
+    
                 plt.pause(args.delay_per_plot)
         
         print(f"Mean individual similarity after {args.number_steps} steps: {mean_individual_sim:.4f}")
@@ -157,7 +170,7 @@ def main():
         initial_axis = figure.add_subplot(121, projection="3d")
         final_axis = figure.add_subplot(122, projection="3d")
 
-        plot_grid(initial_axis, initial_grid, "Initial grid")
+        plot_schelling(initial_axis, initial_grid, "Initial grid")
 
         figure.colorbar(
             plt.cm.ScalarMappable(
@@ -180,7 +193,7 @@ def main():
                 )
 
             if args.segregation:
-                grid = segregation_update(
+                grid, _ = segregation_update(
                     grid,
                     args.similarity_threshold,
                     args.segregation_threshold,
@@ -192,18 +205,15 @@ def main():
                 )
 
             print(f"Step {step + 1}/{args.number_steps}:\n"
-                f"mean individual similarity = {mean_individual_sim:.4f}\n"
-                f"mean global similarity = {mean_global_sim:.4f}\n")
+                f"Mean individual similarity = {mean_individual_sim:.4f}\n"
+                f"Mean global similarity = {mean_global_sim:.4f}\n")
             
             if ((step + 1) % args.steps_per_plot) == 0:
 
                 final_axis.clear()
-                plot_grid(final_axis, grid, f"Grid after step {step + 1}")
+                plot_schelling(final_axis, grid, f"Grid after step {step + 1}")
                 plt.pause(args.delay_per_plot)
         
-        print(f"Mean individual similarity after {args.number_steps} steps: {mean_individual_sim:.4f}")
-        print(f"Mean global similarity after {args.number_steps} steps: {mean_global_sim:.4f}")
-
         plt.ioff()
         plt.show()
 

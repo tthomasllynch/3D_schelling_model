@@ -2,7 +2,8 @@ from itertools import product
 import matplotlib.pyplot as plt
 import numpy as np
 
-EMPTY = 0 
+EMPTY = 0
+
 
 NEIGHBOR_OFFSETS = tuple(
     offset for offset in product((-1, 0, 1), repeat=3) if offset != (0, 0, 0)
@@ -99,6 +100,15 @@ def mean_similarities(grid, similarity_threshold):
         global_similarity = 1.0    
     return mean_individual_similarity, global_similarity
 
+def find_dissatisfied_agents(grid, similarity_threshold, segregation_threshold):
+    occupied = grid != EMPTY
+    _, _, similarity_fraction_grid = similarity_counts(grid, similarity_threshold)
+    
+    dissatisfied = np.argwhere(occupied & (similarity_fraction_grid < segregation_threshold))
+    empty_locations = np.argwhere(~occupied)
+
+    return dissatisfied, empty_locations
+
 
 def segregation_update(grid, similarity_threshold, segregation_threshold, rng):
     """Move unhappy agents to randomly selected empty 3D locations.
@@ -107,15 +117,11 @@ def segregation_update(grid, similarity_threshold, segregation_threshold, rng):
     and the number of empty locations is always preserved. Unoccupied cells are not counted
     in the agent similarity calculation
     """
-    occupied = grid != EMPTY
-    _, _, similarity_fraction_grid = similarity_counts(grid, similarity_threshold)
-    
-    dissatisfied = np.argwhere(occupied & (similarity_fraction_grid < segregation_threshold))
-    empty_locations = np.argwhere(~occupied)
+    dissatisfied, empty_locations = (find_dissatisfied_agents(grid, similarity_threshold, segregation_threshold))
 
     number_moving = min(len(dissatisfied), len(empty_locations))
     if number_moving == 0:
-        return grid.copy()
+        return grid.copy(), len(dissatisfied)
 
     moving_coords = dissatisfied[rng.permutation(len(dissatisfied))[:number_moving]]
     destinations_coords = empty_locations[rng.permutation(len(empty_locations))[:number_moving]]
@@ -127,9 +133,9 @@ def segregation_update(grid, similarity_threshold, segregation_threshold, rng):
     moving_opinions = grid[source].copy()
     updated[source] = EMPTY
     updated[destination] = moving_opinions
-    return updated
+    return updated, len(dissatisfied)
 
-def plot_grid(ax, grid, title):
+def plot_schelling(ax, grid, title):
     """Plot each occupied cell using coolwarm colour map for opinions."""
     occupied = grid != EMPTY
     coordinates = np.argwhere(occupied)
@@ -158,34 +164,29 @@ def plot_grid(ax, grid, title):
     )
     ax.set_box_aspect((grid.shape[2], grid.shape[1], grid.shape[0]))
 
-def plot_graphs(graph_ax_individual, graph_ax_global, 
-                title_individual, title_global):
-    """Plot graphs of the mean individual and global similarities against timestep."""
 
-    graph_ax_individual.set(
-    title=title_individual,
+def plot_graph(graph_ax, title, y_label, y_lim):
+
+    graph_points = graph_ax.scatter(
+    [],
+    [],
+    color="#287271",
+    s=5,
+    )
+
+    graph_ax.set(
+    title= title,
     xlabel="Step",
-    ylabel="Similarity",
-    ylim=(0, 1),
+    ylabel= y_label,
+    ylim=y_lim,
     )
 
-    graph_ax_global.set(
-    title=title_global,
-    xlabel="Step",
-    ylabel="Similarity",
-    ylim=(0,1),
+    graph_ax.grid(
+    True, 
+    linestyle="--", 
+    linewidth=0.6, 
+    alpha=0.5,
     )
 
-    graph_ax_individual.grid(
-        True, 
-        linestyle="--", 
-        linewidth=0.6, 
-        alpha=0.5,
-    )
+    return graph_points
 
-    graph_ax_global.grid(
-        True, 
-        linestyle="--", 
-        linewidth=0.6, 
-        alpha=0.5,
-    )
