@@ -18,6 +18,21 @@ def make_random_grid(shape, fraction_empty, rng):
     return grid
 
 
+def load_grid(filename):
+    """Load a real-valued 3D NumPy .npy array in z, y, x order."""
+    grid = np.load(filename, allow_pickle=False)
+    if not isinstance(grid, np.ndarray):
+        grid.close()
+        raise ValueError("Expected a single NumPy .npy array")
+    if grid.ndim != 3 or grid.size == 0:
+        raise ValueError("Grid must be a non-empty 3D array")
+    if grid.dtype.kind not in "fiu":
+        raise ValueError("Grid must contain real numeric opinions")
+    if not np.all(np.isfinite(grid) & (grid >= 0) & (grid <= 1)):
+        raise ValueError("Opinions must be finite values between 0 and 1")
+    return grid.astype(float)
+
+
 def shifted(grid, offset):
     """Return one toroidally wrapped neighbour plane."""
     return np.roll(grid, shift=offset, axis=(0, 1, 2))
@@ -111,13 +126,16 @@ def find_dissatisfied_agents(grid, similarity_threshold, segregation_threshold):
 
 
 def segregation_update(grid, similarity_threshold, segregation_threshold, rng):
-    """Move unhappy agents to randomly selected empty 3D locations.
+    """Move dissatisfied agents to randomly selected empty 3D locations.
 
-    Moves are simultaneous and one-to-one, therefore agents cannot overwrite one another
-    and the number of empty locations is always preserved. Unoccupied cells are not counted
-    in the agent similarity calculation
+    Agents' moves are determined from the grid before any movement occurs.
+    Each agent receives a unique destination, therefore agents cannot overwrite one
+    another and the number of empty cells remains unchanged. Empty cells are
+    not included when calculating agent similarity.
     """
-    dissatisfied, empty_locations = (find_dissatisfied_agents(grid, similarity_threshold, segregation_threshold))
+    dissatisfied, empty_locations = (
+        find_dissatisfied_agents(grid, similarity_threshold, segregation_threshold)
+        )
 
     number_moving = min(len(dissatisfied), len(empty_locations))
     if number_moving == 0:
@@ -135,58 +153,95 @@ def segregation_update(grid, similarity_threshold, segregation_threshold, rng):
     updated[destination] = moving_opinions
     return updated, len(dissatisfied)
 
-def plot_schelling(ax, grid, title):
-    """Plot each occupied cell using coolwarm colour map for opinions."""
+
+def floodfill(grid, floodfill_threshold):
+    """Scan for spatial clusters of occupied cells with similar opinions.
+
+    A cluster grows one layer at a time through all 26 neighbouring positions.
+    A neighbouring agent joins when its opinion differs from the current cluster
+    mean by less than the floodfill threshold, the mean updates every time a new 
+    layer is added. Coordinates wrap at every edge, matching the toroidal 
+    neighbourhood used by the rest of the model.
+
+    The returned integer grid contains a cluster number for each clustered cell.
+    Empty cells and clusters containing only one agent are labelled as zero. """
+
+    clustered_grid = np.zeros(grid.shape, dtype=np.int32)
+    occupied_coords = [
+        tuple(coordinate) for coordinate in np.argwhere(grid != EMPTY)
+        ]
+    visited = set()
+    cluster_number = 0
+
+    for starting_coord in occupied_coords:
+        if starting_coord in visited:
+            continue
+
+        cluster_number += 1
+        current_cluster = [starting_coord]
+        current_layer = [starting_coord]
+        visited.add(starting_coord)
+
+        while len(current_layer) > 0:
+            mean_opinion = np.mean([grid[coordinate] for coordinate in current_cluster])
+            next_layer = []
+
+            for coordinate in current_layer:
+                clustered_grid[coordinate] = cluster_number
+
+                for offset in NEIGHBOR_OFFSETS:
+                    neighbour = tuple(
+                        (coordinate[axis] + offset[axis]) % grid.shape[axis]
+                        for axis in range(grid.ndim)
+                    )
+
+                    if neighbour in visited or grid[neighbour] == EMPTY:
+                        continue
+
+                    if abs(grid[neighbour] - mean_opinion) < floodfill_threshold:
+                        visited.add(neighbour)
+                        next_layer.append(neighbour)
+                        current_cluster.append(neighbour)
+
+            current_layer = next_layer
+
+    cluster_ids, cluster_sizes = np.unique(
+        clustered_grid[clustered_grid > 0], return_counts=True
+    )
+    single_cluster_ids = cluster_ids[cluster_sizes == 1]
+    clustered_grid[np.isin(clustered_grid, single_cluster_ids)] = 0
+
+    return clustered_grid
+
+def opinion_grouping(grid, opinion_group_threshold):
+    """Find groups of agents that are similar in opinion
+    
+    A group starts from the smallest opinion agent, another agent joins when it 
+    differs from the first agent by less than the opinion group threshold. A new 
+    group is created when every cells that have a difference from the first less
+    of less than the opinion group threshold are added to the group.
+    
+    A list of lists is returned, with each inner list representing a group 
+    and containing the opinion of every agent in that group."""
+
     occupied = grid != EMPTY
-    coordinates = np.argwhere(occupied)
-    opinions = grid[occupied]
+    opinions = np.sort(grid[occupied])
 
-    ax.scatter(
-        coordinates[:, 2],
-        coordinates[:, 1],
-        coordinates[:, 0],
-        c=opinions,
-        cmap="coolwarm",
-        vmin=0,
-        vmax=1,
-        s=100,
-        alpha=0.8,
-        linewidth = 0,
-    )
-    ax.set(
-        title=title,
-        xlabel="Width",
-        ylabel="Height",
-        zlabel="Depth",
-        xlim=(0, grid.shape[2] - 1),
-        ylim=(0, grid.shape[1] - 1),
-        zlim=(0, grid.shape[0] - 1),
-    )
-    ax.set_box_aspect((grid.shape[2], grid.shape[1], grid.shape[0]))
+    if len(opinions) == 0:
+        return []
 
+    groups = [[opinions[0]]]
 
-def plot_graph(graph_ax, title, y_label, y_lim):
+    for opinion in opinions[1:]:
+        current_group = groups[-1]
+        minimum_opinion = current_group[0]
 
-    graph_points = graph_ax.scatter(
-    [],
-    [],
-    color="#287271",
-    s=5,
-    )
+        if opinion - minimum_opinion < opinion_group_threshold:
+            current_group.append(opinion)
+        else:
+            groups.append([opinion])
 
-    graph_ax.set(
-    title= title,
-    xlabel="Step",
-    ylabel= y_label,
-    ylim=y_lim,
-    )
+    groups = [group for group in groups if len(group) > 1]
 
-    graph_ax.grid(
-    True, 
-    linestyle="--", 
-    linewidth=0.6, 
-    alpha=0.5,
-    )
-
-    return graph_points
+    return groups
 

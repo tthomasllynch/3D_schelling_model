@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import numpy as np
 
 EMPTY = 0
@@ -41,7 +42,7 @@ def plot_floodfill_grid(ax, clustered_grid, title):
 
 
 def plot_floodfill_graph(ax, grid, clustered_grid, cluster_plot):
-    """Plot each spatial cluster's mean opinion and agent count."""
+    """Plot spatial cluster sizes with mean opinions above the bars."""
     cluster_ids = np.unique(clustered_grid[clustered_grid > 0])
     cluster_sizes = [
         np.count_nonzero(clustered_grid == cluster_id)
@@ -55,21 +56,22 @@ def plot_floodfill_graph(ax, grid, clustered_grid, cluster_plot):
 
     bars = ax.bar(
         cluster_ids,
-        cluster_mean_opinions,
+        cluster_sizes,
         color=cluster_colours,
     )
     ax.bar_label(
         bars,
-        labels=[str(size) for size in cluster_sizes],
+        labels=[f"{opinion:.2f}" for opinion in cluster_mean_opinions],
         padding=3,
     )
     ax.set(
-        title="Mean Opinion by Cluster",
+        title="Spatial cluster sizes",
         xlabel="Cluster number",
-        ylabel="Mean opinion",
-        ylim=(0, 1),
+        ylabel="Number of agents",
+        ylim=(0, max(1, max(cluster_sizes, default=0) * 1.15)),
         xticks=cluster_ids,
     )
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     ax.grid(
         axis="y",
         linestyle="--",
@@ -80,7 +82,7 @@ def plot_floodfill_graph(ax, grid, clustered_grid, cluster_plot):
     return bars
 
 def plot_opinion_group_graph(ax, groups, title):
-    """Plot opinion group size"""
+    """Plot opinion group sizes with mean opinions above the bars."""
 
     group_sizes = [len(group) for group in groups]
     group_mean_opinions = [np.mean(group) for group in groups]
@@ -90,22 +92,23 @@ def plot_opinion_group_graph(ax, groups, title):
 
     bars = ax.bar(
         group_numbers,
-        group_mean_opinions,
+        group_sizes,
         color=group_colours,
     )
     ax.bar_label(
         bars,
-        labels=[str(size) for size in group_sizes],
+        labels=[f"{opinion:.2f}" for opinion in group_mean_opinions],
         padding=3,
     )
 
     ax.set(
         title=title,
         xlabel="Opinion group number",
-        ylabel="Mean opinion",
-        ylim=(0, 1),
+        ylabel="Number of agents",
+        ylim=(0, max(1, max(group_sizes, default=0) * 1.15)),
         xticks=group_numbers,
     )
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
     ax.grid(
         axis="y",
@@ -130,9 +133,12 @@ def plot_schelling(ax, grid, title):
         cmap="coolwarm",
         vmin=0,
         vmax=1,
-        s=100,
-        alpha=0.8,
-        linewidth = 0,
+        marker="o",
+        s=90,
+        alpha=0.9,
+        depthshade=True,
+        edgecolors=(0, 0, 0, 0.25),
+        linewidths=0.25,
     )
     ax.set(
         title=title,
@@ -169,4 +175,3 @@ def plot_graph(graph_ax, title, y_label, y_lim):
     )
 
     return graph_points
-

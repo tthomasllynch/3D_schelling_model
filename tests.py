@@ -1,10 +1,16 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 import numpy as np
 
 from schelling_3d import (
     consensus_update,
     find_dissatisfied_agents,
+    floodfill,
+    load_grid,
     make_random_grid,
     mean_similarities,
+    opinion_grouping,
     segregation_update,
     shifted,
     similarity_counts,
@@ -168,7 +174,147 @@ def test_segregation_update():
         "Segregation update should empty both agents' original cells") 
 
 
+def test_floodfill():
+    empty_grid = np.zeros((5, 5, 5))
+    clustered_grid = floodfill(empty_grid, 0.05)
+    assert np.equal(clustered_grid, 0).all(), (
+        "An empty grid should not contain any clusters"
+    )
+
+    single_agent_grid = np.zeros((5, 5, 5))
+    single_agent_grid[2, 2, 2] = 0.5
+    clustered_grid = floodfill(single_agent_grid, 0.05)
+    assert np.equal(clustered_grid, 0).all(), (
+        "A cluster containing only one agent should be removed"
+    )
+
+    grid = np.zeros((5, 5, 5))
+    grid[0, 0, 0] = 0.10
+    grid[0, 0, 1] = 0.12
+    grid[3, 3, 3] = 0.80
+    grid[3, 3, 4] = 0.82
+    original_grid = grid.copy()
+
+    clustered_grid = floodfill(grid, 0.05)
+    first_cluster = clustered_grid[0, 0, 0]
+    second_cluster = clustered_grid[3, 3, 3]
+
+    assert first_cluster > 0, "The first connected pair should form a cluster"
+    assert clustered_grid[0, 0, 1] == first_cluster, (
+        "Connected agents with similar opinions should share a cluster"
+    )
+    assert second_cluster > 0, "The second connected pair should form a cluster"
+    assert clustered_grid[3, 3, 4] == second_cluster, (
+        "Connected agents with similar opinions should share a cluster"
+    )
+    assert first_cluster != second_cluster, (
+        "Spatially disconnected groups should form different clusters"
+    )
+    assert np.count_nonzero(clustered_grid) == 4, (
+        "All four agents should belong to one of the two clusters"
+    )
+    assert np.array_equal(grid, original_grid), (
+        "Floodfill should not change the original opinion grid"
+    )
+
+    wrapping_grid = np.zeros((5, 5, 5))
+    wrapping_grid[0, 2, 2] = 0.4
+    wrapping_grid[4, 2, 2] = 0.42
+    wrapped_clusters = floodfill(wrapping_grid, 0.05)
+
+    assert wrapped_clusters[0, 2, 2] > 0, (
+        "Agents connected across an edge should form a cluster"
+    )
+    assert wrapped_clusters[0, 2, 2] == wrapped_clusters[4, 2, 2], (
+        "Flood fill should use toroidal wrapping at grid boundaries"
+    )
+
+
+def test_opinion_grouping():
+    empty_grid = np.zeros((2, 2, 3))
+    assert opinion_grouping(empty_grid, 0.05) == [], (
+        "An empty grid should not contain any opinion groups"
+    )
+
+    grid = np.zeros((2, 2, 3))
+    grid[0, 0, 0] = 0.10
+    grid[0, 0, 1] = 0.14
+    grid[0, 0, 2] = 0.18
+    grid[1, 1, 0] = 0.40
+    grid[1, 1, 1] = 0.42
+    grid[1, 1, 2] = 0.90
+    original_grid = grid.copy()
+
+    groups = opinion_grouping(grid, 0.05)
+
+    assert len(groups) == 2, (
+        "Only the two opinion groups should be returned"
+    )
+    assert np.allclose(groups[0], [0.10, 0.14]), (
+        "The first two nearby opinions should form the first group"
+    )
+    assert np.allclose(groups[1], [0.40, 0.42]), (
+        "The second pair of nearby opinions should form the second group"
+    )
+    assert all(len(group) > 1 for group in groups), (
+        "Single agent opinion groups should be removed"
+    )
+    assert np.array_equal(grid, original_grid), (
+        "Opinion grouping should not change the original grid"
+    )
+
+
+def test_load_grid():
+    with TemporaryDirectory() as directory:
+        path = Path(directory) / "grid.npy"
+        expected = np.zeros((3, 4, 5))
+        expected[0, 1, 2] = 0.25
+        expected[1, 2, 3] = 0.9
+        np.save(path, expected)
+        assert np.array_equal(load_grid(path), expected), (
+            "Loading must preserve opinions, axis order, and empty outer layers"
+        )
+
+        integer_grid = np.ones((3, 3, 3), dtype=int)
+        np.save(path, integer_grid)
+        loaded = load_grid(path)
+        assert np.array_equal(loaded, integer_grid)
+        assert loaded.dtype.kind == "f", "Integer grids must support opinion updates"
+
+        for invalid in (
+            np.zeros((3, 3)),
+            np.zeros((0, 3, 3)),
+            np.full((3, 3, 3), -0.1),
+            np.full((3, 3, 3), 1.1),
+            np.full((3, 3, 3), np.nan),
+            np.full((3, 3, 3), np.inf),
+            np.full((3, 3, 3), "0.5"),
+            np.ones((3, 3, 3), dtype=complex),
+            np.ones((3, 3, 3), dtype=object),
+        ):
+            np.save(path, invalid)
+            try:
+                load_grid(path)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f"Invalid grid accepted: {invalid.shape}, {invalid.dtype}")
+
+        archive = Path(directory) / "grid.npz"
+        np.savez(archive, grid=expected)
+        try:
+            load_grid(archive)
+        except ValueError as error:
+            assert "single NumPy .npy array" in str(error)
+        else:
+            raise AssertionError("Archives must be rejected in favour of a single array")
+
+
+
+
 def run_model_tests():
+    test_load_grid()
+    print("Load NumPy grid tests passed")
     test_make_random_grid()
     print("Make random grid tests passed")
     test_shifted()
@@ -183,6 +329,10 @@ def run_model_tests():
     print("Dissatisfied agent tests passed")
     test_segregation_update()
     print("Segregation update tests passed")
+    test_floodfill()
+    print("Flood-fill tests passed")
+    test_opinion_grouping()
+    print("Opinion grouping tests passed")
     print("All tests passed")
 
 
