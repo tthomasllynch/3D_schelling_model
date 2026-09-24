@@ -106,7 +106,7 @@ Execution is synchronous within each stage: all consensus updates use the opinio
 | `--fraction-empty` | `0.9` | Fraction of cells that are empty |
 | `--seed` | `2` | Random seed used to reproduce a run, change the seed to generate a different arrangement of agent locations|
 | `--consensus` / `--no-consensus` | On | Enable or disable opinion updates. |
-| `--consensus-threshold` | `0.2` | A neighbour can influence consensus when the opinion difference is below this value. |
+| `--consensus-threshold` | `0.2` | A neighbour can influence consensus when the opinion difference is below this value.|
 | `--consensus-weight` | `0.06` | How far an opinion moves towards compatible neighbours' mean each step. |
 | `--segregation` / `--no-segregation` | On | Enable or disable agent relocation. |
 | `--similarity-threshold` | `0.2` | Two occupied neighbours count as similar when their opinion difference is below this value. |
