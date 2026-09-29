@@ -126,14 +126,19 @@ def main():
         print(f"Created 3D grid of size {grid.shape} with 26 wrapping neighbours")
 
         #initialising and positioning figures
-        figure = plt.figure(figsize=(20, 8))
-        initial_axis = figure.add_subplot(321, projection="3d")
-        final_axis = figure.add_subplot(322, projection="3d")
+        figure = plt.figure(figsize=(20, 10))
+        layout = figure.add_gridspec(
+            2,
+            4,
+            height_ratios=[1.6, 1],
+        )
 
-        graph_ax_individual = figure.add_subplot(323)
-        graph_ax_global = figure.add_subplot(324)
-        graph_ax_dissatisfied = figure.add_subplot(325)
-        graph_ax_sd = figure.add_subplot(326)
+        initial_axis = figure.add_subplot(layout[0, 0:2], projection="3d")
+        final_axis = figure.add_subplot(layout[0, 2:4], projection="3d")
+        graph_ax_individual = figure.add_subplot(layout[1, 0])
+        graph_ax_global = figure.add_subplot(layout[1, 1])
+        graph_ax_dissatisfied = figure.add_subplot(layout[1, 2])
+        graph_ax_sd = figure.add_subplot(layout[1, 3])
 
         steps = []
         individual_mean_values = []
@@ -268,7 +273,7 @@ def main():
                 reverse=True,
                 )[:20]
 
-        cluster_figure = plt.figure(figsize=(20, 8), constrained_layout=True)
+        cluster_figure = plt.figure(figsize=(20, 10), constrained_layout=True)
         cluster_figure.set_constrained_layout_pads(hspace=0.2)
         cluster_figure.suptitle("Numbers above bars show mean opinion")
 
